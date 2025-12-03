@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unblended Collections Partner Hub | Opt-In Guide</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase Imports for Data Persistence -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // IMPORTANT: Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        if (firebaseConfig) {
+            setLogLevel('Debug'); // Enable Firestore logging
+            
+            const app = initializeApp(firebaseConfig);
+            window.db = getFirestore(app);
+            window.auth = getAuth(app);
+            
+            // Set up authentication state and global data context
+            onAuthStateChanged(window.auth, async (user) => {
+                let userId = null;
+                if (!user) {
+                    // Sign in anonymously if no token is available
+                    if (initialAuthToken) {
+                        try {
+                            await signInWithCustomToken(window.auth, initialAuthToken);
+                            userId = window.auth.currentUser.uid;
+                        } catch(error) {
+                            console.error("Firebase custom token sign-in failed. Falling back to anonymous.", error);
+                            await signInAnonymously(window.auth);
+                            userId = window.auth.currentUser.uid;
+                        }
+                    } else {
+                        // Fallback to anonymous sign-in
+                        await signInAnonymously(window.auth);
+                        userId = window.auth.currentUser.uid;
+                    }
+                } else {
+                    userId = user.uid;
+                }
+                
+                window.userId = userId;
+                console.log("Authenticated with user ID:", userId);
+                
+                // Initialize the application logic (e.g., fetch data) once auth is ready
+                if (window.onAppReady) {
+                    window.onAppReady();
+                }
+            });
+        }
+    </script>
+
+    <!-- Placeholder Comments Required by Instructions -->
+    <!-- Chosen Palette: Warm Coffee & Cream. Background: #FAFAF9 (Warm Neutral/Stone-50). Accents: #78350F (Coffee/Amber-900), #D97706 (Amber-600). Text: #44403C (Stone-700). Justification: Matches the "Roaster" theme, creating a calm, organic, and professional atmosphere. -->
+    
+    <!-- Application Structure Plan: 
+         The application transforms the linear text guide into a 3-stage interactive workflow:
+         1. "The Opportunity" (Intro): Sets the stage and value proposition.
+         2. "Partnership Simulator" (Part 1 - Data): This section allows roasters to input their proposed pricing and visualize the margin split dynamically using Chart.js. This data is now stored persistently in Firestore.
+         3. "Connection Wizard" (Part 2 - Technical Guide): A step-by-step interactive stepper replacing the static list. This prevents cognitive overload by showing one technical step at a time, with specific emphasis on the "Critical Whole Bean" step. 
+         This structure was chosen to move the user from "Understanding" -> "Planning & Saving" -> "Executing".
+    -->
+
+    <!-- Visualization & Content Choices:
+         1. Pricing Structure Simulator (Bar Chart - Chart.js):
+            - Goal: Inform & Compare. Now calculates Roaster Margin based on COGS. Data is read from and saved to Firestore.
+            - Context: Users need to provide COGS, Wholesale, and Retail pricing.
+            - Interaction: User inputs prices -> Chart updates instantly AND Data is persisted to Firestore.
+            - Justification: Visualizing the full financial breakdown (COGS, Roaster Profit, Producer Fee, Unblended Margin) helps partners understand the financial model before committing.
+         2. Connection Process Stepper (HTML/JS/Tailwind):
+            - Goal: Change/Process.
+            - Context: The Shopify Collective setup is complex (5 steps).
+            - Interaction: Next/Prev buttons, Progress bar.
+            - Justification: Breaking complex technical tasks into chunks reduces error rates. 
+         3. Readiness Checklist (Interactive List):
+            - Goal: Organize.
+            - Context: Business Details (Part 1, A).
+            - Interaction: Checkboxes that trigger success states.
+            - Justification: Ensures prerequisites are met before starting the technical wizard. 
+    -->
+
+    <style>
+        /* Custom Font Imports - using system fonts for performance/simplicity as per single file constraint, 
+           but styling to resemble clean sans-serif */
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Chart Container Styling - Mandatory per instructions */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px; /* Tailwind max-w-xl approx */
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+
+        /* Custom Utilities */
+        .step-active {
+            background-color: #78350F;
+            color: white;
+            border-color: #78350F;
+        }
+        .step-inactive {
+            background-color: white;
+            color: #78350F;
+            border-color: #E7E5E4;
+        }
+        
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-[#FAFAF9] text-[#44403C] antialiased min-h-screen flex flex-col">
+
+    <!-- Navigation -->
+    <nav class="bg-white border-b border-[#E7E5E4] sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <span class="text-2xl mr-2">☕</span>
+                    <span class="font-bold text-xl tracking-tight text-[#78350F]">Unblended Collections Partner Hub</span>
+                    <span id="user-id-display" class="ml-4 text-xs bg-gray-100 px-2 py-1 rounded hidden md:block"></span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="switchSection('intro')" class="nav-btn px-3 py-2 rounded-md text-sm font-medium hover:bg-[#F5F5F4] transition-colors text-[#78350F]">Overview</button>
+                    <button onclick="switchSection('planning')" class="nav-btn px-3 py-2 rounded-md text-sm font-medium hover:bg-[#F5F5F4] transition-colors text-[#57534E]">Strategy & Pricing</button>
+                    <button onclick="switchSection('guide')" class="nav-btn px-3 py-2 rounded-md text-sm font-medium hover:bg-[#F5F5F4] transition-colors text-[#57534E]">Connection Steps</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Notification Bar for Data Status -->
+        <div id="status-message" class="hidden fixed top-20 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded shadow-lg z-50 transition-transform duration-300 transform translate-x-full">
+            Data saved successfully!
+        </div>
+        
+        <!-- SECTION 1: INTRO & READINESS -->
+        <div id="intro-section" class="tab-content active space-y-8">
+            <!-- Hero -->
+            <div class="text-center space-y-4 py-10">
+                <h1 class="text-4xl md:text-5xl font-extrabold text-[#78350F]">Unblended Collections Partnership</h1>
+                <p class="text-xl text-[#57534E] max-w-3xl mx-auto">
+                    Expand your reach. Sync your inventory. Automate fulfillment.
+                </p>
+                <p class="text-md text-[#78350F] font-semibold">
+                    An Interactive Opt-In Guide
+                </p>
+            </div>
+
+            <!-- Program Overview (New Content) -->
+            <div class="bg-[#FFFBEB] rounded-xl shadow-md border border-[#FCD34D] p-6 md:p-8 text-[#44403C]">
+                <h2 class="text-2xl font-bold mb-4 text-[#92400E]">Program Overview: The Vision</h2>
+                <div class="space-y-4 text-lg">
+                    <p>
+                        Unblended Collections is a <strong>collaborative effort</strong> that brings producers to a competition level by focusing on quality, partnership, and recognition.
+                    </p>
+                    <p>
+                        When Unblended began, we set out to answer one question: <strong>How can a producer’s name become a brand?</strong>
+                    </p>
+                    <p>
+                        This program is designed for producers who have reached their highest level and whose names are now recognized in the U.S. Each month, we’ll invite one coffee producer and one roaster to co-design a coffee and promote it through this platform. This structure is built to foster collaboration and craft exclusive lots designed with a <strong>competition-level quality mindset</strong>.
+                    </p>
+                </div>
+            </div>
+            <!-- End Program Overview -->
+
+            <!-- Intro Context (Old "Start Here" content) -->
+            <div class="bg-white rounded-xl shadow-sm border border-[#E7E5E4] p-6 md:p-8">
+                <h2 class="text-2xl font-bold mb-4 text-[#78350F]">Start Here: Next Steps</h2>
+                <p class="mb-4 text-lg">
+                    Welcome to the <strong>Unblended Collections Partner Program</strong>. This partnership leverages <strong>Shopify Collective</strong> for seamless inventory and order routing. Before we dive into the technical setup, let's confirm your readiness.
+                </p>
+                
+                <div class="grid md:grid-cols-2 gap-8 mt-8">
+                    <div class="bg-[#FAFAF9] p-6 rounded-lg border border-[#E7E5E4]">
+                        <h3 class="font-bold text-lg mb-3">Partner Benefits</h3>
+                        <ul class="space-y-2">
+                            <li class="flex items-start"><span class="mr-2 text-green-600">✓</span> Automatic Order Routing</li>
+                            <li class="flex items-start"><span class="mr-2 text-green-600">✓</span> Live Inventory Syncing</li>
+                            <li class="flex items-start"><span class="mr-2 text-green-600">✓</span> You Control the Shipping</li>
+                            <li class="flex items-start"><span class="mr-2 text-green-600">✓</span> Wholesale Pricing Control</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="bg-[#FAFAF9] p-6 rounded-lg border border-[#E7E5E4]">
+                        <h3 class="font-bold text-lg mb-3 text-[#92400E]">Prerequisites Checklist</h3>
+                        
+                        <!-- NEW INPUTS START HERE -->
+                        <div class="space-y-4 mb-6">
+                            <div>
+                                <label for="roaster-name" class="block text-sm font-medium text-gray-700 mb-1">Your Roaster/Company Name</label>
+                                <input type="text" id="roaster-name" placeholder="Acme Coffee Roasters" class="w-full border-gray-300 rounded-md shadow-sm border p-2 text-sm focus:ring-[#78350F] focus:border-[#78350F]" oninput="updateChartData(true)">
+                            </div>
+                            <div>
+                                <label for="roaster-email" class="block text-sm font-medium text-gray-700 mb-1">Primary Contact Email</label>
+                                <input type="email" id="roaster-email" placeholder="contact@acmecoffee.com" class="w-full border-gray-300 rounded-md shadow-sm border p-2 text-sm focus:ring-[#78350F] focus:border-[#78350F]" oninput="updateChartData(true)">
+                            </div>
+                        </div>
+                        <!-- NEW INPUTS END HERE -->
+
+                        <p class="text-sm mb-4">Please confirm the following to proceed:</p>
+                        <div class="space-y-3">
+                            <label class="flex items-start space-x-3 cursor-pointer">
+                                <input type="checkbox" id="check-shopify" class="form-checkbox h-5 w-5 text-[#78350F] rounded" onchange="updateReadiness()">
+                                <span>Do you operate an active <strong>Shopify Store</strong>?</span>
+                            </label>
+                            <label class="flex items-start space-x-3 cursor-pointer">
+                                <input type="checkbox" id="check-wholesale" class="form-checkbox h-5 w-5 text-[#78350F] rounded" onchange="updateReadiness()">
+                                <span>Are You Willing to Work with us on a Wholesale Pricing Model? <em class="text-xs text-gray-500 block ml-8 mt-0 leading-none">Portion of Profit will go directly to producer.</em></span>
+                            </label>
+                        </div>
+                        <div id="readiness-msg" class="mt-4 text-sm font-semibold text-gray-400">
+                            Check boxes to continue...
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-8 text-center">
+                    <button id="btn-start-planning" disabled onclick="switchSection('planning')" class="bg-[#E7E5E4] text-gray-400 px-8 py-3 rounded-full font-bold text-lg transition-all cursor-not-allowed">
+                        Proceed to Strategy & Pricing
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 2: STRATEGY & DATA -->
+        <div id="planning-section" class="tab-content space-y-8">
+            <div class="bg-white rounded-xl shadow-sm border border-[#E7E5E4] p-6 md:p-8">
+                <div class="flex items-center mb-6">
+                    <div class="bg-[#F5F5F4] p-2 rounded-full mr-4">
+                        <span class="text-2xl">📊</span>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-bold text-[#78350F]">Part 1: Partnership Strategy & Pricing</h2>
+                        <p class="text-sm text-gray-500">Define your product and financial structure.</p>
+                    </div>
+                </div>
+
+                <p class="mb-6">
+                    Use this simulator to define your **Roaster's Internal Cost (COGS)**, your **Suggested Wholesale Price** to us (Unblended Partner Price), and the **Suggested Retail Price (MSRP)**. The chart below shows the full breakdown of the final sale price.
+                </p>
+                <div class="text-sm bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-3 mb-6 rounded">
+                    <strong>Note:</strong> Your coffee name and pricing entered here are automatically saved to our database for your partner profile.
+                </div>
+
+                <div class="grid lg:grid-cols-2 gap-8">
+                    <!-- Input Area -->
+                    <div class="space-y-6">
+                        <div class="bg-[#FAFAF9] p-6 rounded-lg border border-[#E7E5E4]">
+                            <h3 class="font-bold text-lg mb-4 text-[#78350F]">Product Selection</h3>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Proposed Coffee Names (Comma Separated)</label>
+                                <input type="text" id="coffee-name" placeholder="e.g. Sebastian Ramirez Washed Pink Bourbon, Natural Geisha" class="w-full border-gray-300 rounded-md shadow-sm border p-2 focus:ring-[#78350F] focus:border-[#78350F]" oninput="updateChartData()">
+                                <p class="text-xs text-gray-500 mt-1">List all whole bean coffees you wish to offer, comma-separated.</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-[#FAFAF9] p-6 rounded-lg border border-[#E7E5E4]">
+                            <h3 class="font-bold text-lg mb-4 text-[#78350F]">Pricing Inputs (Example for one bag)</h3>
+                            <p class="text-sm text-gray-600 mb-4">
+                                *All prices should be in USD.
+                            </p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                
+                                <!-- NEW INPUT: COGS -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Roaster's Internal Cost (COGS)</label>
+                                    <div class="relative rounded-md shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <span class="text-gray-500 sm:text-sm">$</span>
+                                        </div>
+                                        <input type="number" id="price-cogs" value="10.00" class="focus:ring-[#78350F] focus:border-[#78350F] block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md py-2 border" placeholder="0.00" oninput="updateChartData()">
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        Your total cost (green bean, labor, packaging).
+                                    </p>
+                                </div>
+
+                                <!-- Unblended Partner Price -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Unblended Partner Price (Wholesale)</label>
+                                    <div class="relative rounded-md shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <span class="text-gray-500 sm:text-sm">$</span>
+                                        </div>
+                                        <input type="number" id="price-wholesale" value="20.00" class="focus:ring-[#78350F] focus:border-[#78350F] block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md py-2 border" placeholder="0.00" oninput="updateChartData()">
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        What we "purchase" the coffee for from you.
+                                    </p>
+                                </div>
+                                
+                                <!-- Suggested Retail Price (MSRP) -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Suggested Retail Price (MSRP)</label>
+                                    <div class="relative rounded-md shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <span class="text-gray-500 sm:text-sm">$</span>
+                                        </div>
+                                        <input type="number" id="price-retail" value="28.00" class="focus:ring-[#78350F] focus:border-[#78350F] block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md py-2 border" placeholder="0.00" oninput="updateChartData()">
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        Our suggested consumer selling price.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chart Area -->
+                    <div class="bg-white p-4 rounded-lg border border-[#E7E5E4] flex flex-col justify-center items-center">
+                        <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wide mb-2">Financial Breakdown (Based on MSRP)</h4>
+                        <!-- Chart Container Mandatory Wrapper -->
+                        <div class="chart-container">
+                            <canvas id="pricingChart"></canvas>
+                        </div>
+                        <div class="mt-4 text-center space-y-1 w-full">
+                            <p class="text-lg font-bold text-gray-700">
+                                Suggested Retail Price (MSRP): <span id="disp-retail" class="font-bold text-[#78350F]">$28.00</span>
+                            </p>
+                            <div class="flex justify-around mt-3 border-t pt-2 border-gray-100">
+                                <div class="text-left">
+                                    <p class="text-sm font-semibold text-green-700">
+                                        Roaster's Gross Profit: <span id="disp-roaster-margin" class="font-bold text-xl">$10.00</span>
+                                    </p>
+                                    <p class="text-xs text-gray-500">
+                                        (Wholesale Price - COGS)
+                                    </p>
+                                </div>
+                                <div class="text-left">
+                                    <p class="text-sm font-semibold text-[#D97706]">
+                                        Unblended's Net Margin: <span id="disp-unblended-margin" class="font-bold text-xl">$6.40</span>
+                                    </p>
+                                    <p class="text-xs text-gray-500">
+                                        (Our Markup less Producer Fee)
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center mt-8 pt-6 border-t border-gray-100">
+                    <button onclick="switchSection('intro')" class="text-gray-500 hover:text-[#78350F]">← Back</button>
+                    <button onclick="switchSection('guide')" class="bg-[#78350F] text-white px-6 py-2 rounded-lg hover:bg-[#92400E] transition-colors shadow-md">
+                        Ready to Connect (Part 2) →
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 3: CONNECTION GUIDE (STEPPER) -->
+        <div id="guide-section" class="tab-content space-y-8">
+            <div class="bg-white rounded-xl shadow-sm border border-[#E7E5E4] p-6 md:p-8">
+                <div class="flex items-center mb-6">
+                    <div class="bg-[#F5F5F4] p-2 rounded-full mr-4">
+                        <span class="text-2xl">🔗</span>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-bold text-[#78350F]">Part 2: Connection Guide</h2>
+                        <p class="text-sm text-gray-500">Follow these 5 steps to activate Shopify Collective.</p>
+                    </div>
+                </div>
+
+                <!-- Stepper Progress -->
+                <div class="mb-8">
+                    <div class="flex items-center justify-between relative">
+                        <div class="absolute left-0 top-1/2 transform -translate-y-1/2 w-full h-1 bg-gray-200 -z-10"></div>
+                        <!-- Steps indicators will be generated by JS -->
+                        <div id="stepper-indicators" class="w-full flex justify-between">
+                            <!-- JS fills this -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step Content Container -->
+                <div id="step-container" class="min-h-[300px]">
+                    <!-- Step 1 -->
+                    <div class="step-content block" data-step="1">
+                        <h3 class="text-xl font-bold text-[#78350F] mb-4">Step 1: Install the App</h3>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="prose text-[#57534E]">
+                                <ol class="list-decimal pl-5 space-y-3">
+                                    <li>Check your email (Primary Contact) for an email labeled <strong>Shopify Collective Invitation</strong>.</li>
+                                    <li>Click the <strong>"Accept Invitation"</strong> button.</li>
+                                    <li>You will be redirected to your Shopify Admin.</li>
+                                    <li>Follow the prompts to install the <strong>Collective: Supplier</strong> sales channel.</li>
+                                    <li>Complete your initial profile setup.</li>
+                                </ol>
+                            </div>
+                            <div class="bg-blue-50 p-6 rounded-lg border border-blue-100 flex items-center justify-center">
+                                <div class="text-center">
+                                    <div class="text-4xl mb-2">📩</div>
+                                    <p class="text-sm text-blue-800 font-semibold">Check your inbox for the invite link!</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="step-content hidden" data-step="2">
+                        <h3 class="text-xl font-bold text-[#78350F] mb-4">Step 2: Create Price List</h3>
+                        <div class="prose text-[#57534E] mb-6">
+                            <p>A Price List determines which products we can sell and the price we pay you.</p>
+                            <ol class="list-decimal pl-5 space-y-3">
+                                <li>In Shopify Admin, go to <strong>Apps > Collective: Supplier</strong>.</li>
+                                <li>Navigate to <strong>Price Lists</strong> section.</li>
+                                <li>Click <strong>"Create Price List"</strong>.</li>
+                                <li>Name it clearly (e.g., <em>"Unblended Wholesale - [Your Name]"</em>).</li>
+                                <li>Under <strong>Availability</strong>, select "Only to specific connected retailers".</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 (CRITICAL) -->
+                    <div class="step-content hidden" data-step="3">
+                        <div class="border-l-4 border-amber-500 pl-4 mb-4">
+                            <h3 class="text-xl font-bold text-amber-700">Step 3: Select Whole Bean Only</h3>
+                            <p class="text-sm font-bold text-amber-600 uppercase tracking-wide">Critical Requirement</p>
+                        </div>
+                        
+                        <div class="grid md:grid-cols-2 gap-8">
+                            <div>
+                                <p class="mb-4">This step ensures we only import the correct coffee variants.</p>
+                                <ol class="list-decimal pl-5 space-y-3 text-[#57534E]">
+                                    <li>In your new Price List, click <strong>"Add Products"</strong>.</li>
+                                    <li>Search for and select the coffees you listed in Part 1 (Coffee: <span id="step3-coffee-name-display" class="font-bold italic"></span>).</li>
+                                    <li class="font-semibold text-gray-900">Ensure only "Whole Bean" variants are checked.</li>
+                                </ol>
+                                <p class="mt-4 text-sm bg-gray-100 p-3 rounded">
+                                    <strong>Goal:</strong> If you have "Drip" or "Espresso" grind variants, <span class="text-red-600 font-bold">deselect them</span>. Only Whole Bean should be active.
+                                </p>
+                            </div>
+                            <div class="bg-amber-50 p-6 rounded-lg border border-amber-200 flex flex-col items-center justify-center text-center">
+                                <div class="text-5xl mb-4">☕</div>
+                                <div class="space-y-2">
+                                    <div class="flex items-center space-x-2 text-green-700 font-bold">
+                                        <span>✅</span> <span>Whole Bean</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2 text-red-400 line-through">
+                                        <span>❌</span> <span>Ground - Drip</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2 text-red-400 line-through">
+                                        <span>❌</span> <span>Ground - Espresso</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4 -->
+                    <div class="step-content hidden" data-step="4">
+                        <div class="border-l-4 border-amber-500 pl-4 mb-4">
+                            <h3 class="text-xl font-bold text-amber-700">Step 4: Pricing & Inventory</h3>
+                            <p class="text-sm font-bold text-amber-600 uppercase tracking-wide">Update Inventory Counts</p>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-[#FAFAF9] p-4 rounded-lg">
+                                <h4 class="font-bold text-[#78350F]">1. Review Pricing</h4>
+                                <p class="text-sm text-gray-600 mt-1">
+                                    Confirm the **Unblended Partner Price (Wholesale)** in the list matches what you saved in the "Strategy" tab (<span id="step4-price-display" class="font-mono font-bold">$20.00</span>). This price covers your COGS and your Gross Profit.
+                                </p>
+                            </div>
+                            
+                            <div class="bg-[#FAFAF9] p-4 rounded-lg border border-red-100">
+                                <h4 class="font-bold text-red-700">2. Inventory Requirement (Crucial)</h4>
+                                <p class="text-sm text-gray-800 mt-1 mb-2 font-semibold">
+                                    We require a dedicated inventory count to sell on our website.
+                                </p>
+                                <ul class="list-disc pl-5 text-sm space-y-1 text-gray-700">
+                                    <li>Even if you don't track inventory on your own store, you **MUST** make inventory available to us.</li>
+                                    <li>In the Collective app, ensure inventory settings are configured correctly to reflect the total available stock you dedicate to this channel.</li>
+                                    <li>We recommend keeping a minimum stock level (e.g., 50 bags) dedicated for our channel to avoid sudden stockouts.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5 -->
+                    <div class="step-content hidden" data-step="5">
+                        <h3 class="text-xl font-bold text-[#78350F] mb-4">Step 5: Share Price List</h3>
+                        <div class="text-center py-8">
+                            <div class="text-6xl mb-4">🚀</div>
+                            <p class="text-lg text-[#57534E] mb-6">You're almost there!</p>
+                            
+                            <div class="max-w-md mx-auto text-left space-y-4 bg-gray-50 p-6 rounded-lg border border-gray-200">
+                                <p>1. <strong>Save</strong> your Price List configuration.</p>
+                                <p>2. Look for <strong>"Share with Retailers"</strong>.</p>
+                                <p>3. Select our store from the list (or add us via URL if prompted).</p>
+                                <p>4. Send!</p>
+                            </div>
+
+                            <div class="mt-8">
+                                <p class="font-bold text-green-700">That's it! We will receive a notification and sync your products.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Buttons -->
+                <div class="flex justify-between mt-8 pt-6 border-t border-gray-100">
+                    <button id="prev-step-btn" onclick="changeStep(-1)" class="px-4 py-2 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Previous</button>
+                    
+                    <div class="flex space-x-2">
+                        <button onclick="switchSection('planning')" class="md:hidden px-4 py-2 text-sm text-gray-400">Back to Plan</button>
+                        <button id="next-step-btn" onclick="changeStep(1)" class="bg-[#78350F] text-white px-6 py-2 rounded hover:bg-[#92400E] shadow-sm">Next Step</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-[#E7E5E4] mt-auto">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-sm text-gray-400">
+                &copy; Unblended Collections Partner Program. 
+            </p>
+        </div>
+    </footer>
+
+    <!-- Logic -->
+    <script>
+        // State Management
+        const state = {
+            currentStep: 1,
+            totalSteps: 5,
+            partnerDetails: { // NEW FIELD
+                roasterName: "",
+                roasterEmail: "",
+            },
+            pricing: {
+                // Updated defaults to reflect the new structure and example values
+                coffeeName: "Sebastian Ramirez Washed Pink Bourbon, Anaerobic Natural Geisha",
+                cogs: 10.00, // Roaster's Internal Cost
+                wholesale: 20.00, // Unblended Partner Price
+                retail: 28.00 // Suggested Retail Price
+            },
+            checklist: {
+                shopify: false,
+                wholesale: false 
+            }
+        };
+
+        // Chart Instance
+        let pricingChart = null;
+        const PRODUCER_PROFIT_PERCENT = 0.08; // 8% fixed producer fee based on Wholesale Price
+
+        // Firestore Data Path Helper Functions
+        function getPartnerDocRef() {
+            if (window.db && window.userId) {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const partnerId = window.userId;
+                // Private Path (for Roaster's own saved state)
+                return doc(window.db, `artifacts/${appId}/users/${partnerId}/partner_data/strategy`);
+            }
+            return null;
+        }
+
+        function getSubmissionDocRef() {
+            if (window.db && window.userId) {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const partnerId = window.userId;
+                // Public Path (for Admin access)
+                return doc(window.db, `artifacts/${appId}/public/data/roaster_submissions/${partnerId}`);
+            }
+            return null;
+        }
+
+        // --- FIRESTORE OPERATIONS ---
+        async function loadPartnerData() {
+            const docRef = getPartnerDocRef();
+            if (!docRef) return;
+            
+            try {
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    console.log("Loaded existing data:", data);
+                    
+                    // Update state and UI inputs
+                    state.pricing.coffeeName = data.coffeeName || state.pricing.coffeeName;
+                    state.pricing.cogs = data.cogs || state.pricing.cogs; // Load new field
+                    state.pricing.retail = data.retail || state.pricing.retail;
+                    state.pricing.wholesale = data.wholesale || state.pricing.wholesale;
+                    
+                    // Load new partner details
+                    state.partnerDetails.roasterName = data.roasterName || "";
+                    state.partnerDetails.roasterEmail = data.roasterEmail || "";
+                    
+                    document.getElementById('coffee-name').value = state.pricing.coffeeName;
+                    document.getElementById('price-cogs').value = state.pricing.cogs; // Update new input
+                    document.getElementById('price-retail').value = state.pricing.retail;
+                    document.getElementById('price-wholesale').value = state.pricing.wholesale;
+                    
+                    // Update new UI inputs
+                    document.getElementById('roaster-name').value = state.partnerDetails.roasterName;
+                    document.getElementById('roaster-email').value = state.partnerDetails.roasterEmail;
+                }
+            } catch (e) {
+                console.error("Error loading partner data: ", e);
+            } finally {
+                // Always call update to refresh chart and text displays
+                updateChartData(false); 
+            }
+        }
+
+        async function savePartnerData(showSuccess = true) {
+            const privateDocRef = getPartnerDocRef();
+            const publicDocRef = getSubmissionDocRef();
+
+            if (!privateDocRef || !publicDocRef) {
+                console.error("Cannot save: Database or User ID not ready.");
+                if (showSuccess) showStatusMessage("Error saving data: User not authenticated.", true);
+                return;
+            }
+            
+            // Data object to be saved to both locations
+            const dataToSave = {
+                // Pricing data
+                coffeeName: state.pricing.coffeeName,
+                cogs: state.pricing.cogs,
+                retail: state.pricing.retail,
+                wholesale: state.pricing.wholesale,
+                
+                // New Partner Details
+                roasterId: window.userId, // Include the ID in the document for lookup
+                roasterName: state.partnerDetails.roasterName,
+                roasterEmail: state.partnerDetails.roasterEmail,
+
+                lastUpdated: new Date().toISOString()
+            };
+
+            try {
+                // Implement exponential backoff for fetch retry mechanism
+                const MAX_RETRIES = 5;
+                for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+                    try {
+                        // 1. Save to Private Path (for the Roaster)
+                        await setDoc(privateDocRef, dataToSave, { merge: true });
+
+                        // 2. Save to Public Path (for the Admin)
+                        // Use the exact same data object. This is what you (the admin) will access.
+                        await setDoc(publicDocRef, dataToSave, { merge: true });
+                        
+                        console.log("Partner data successfully saved to both private and public collections.");
+                        
+                        // Only show success message if requested and save succeeded
+                        if (showSuccess) showStatusMessage("Data saved successfully!");
+                        return; // Exit on successful save
+                    } catch (e) {
+                        console.warn(`Attempt ${attempt + 1} failed. Retrying...`, e);
+                        if (attempt === MAX_RETRIES - 1) throw e; // Throw if last attempt fails
+                        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            } catch (e) {
+                console.error("Error saving document after retries: ", e);
+                if (showSuccess) showStatusMessage("Error saving data. Please check console.", true);
+            }
+        }
+
+        function showStatusMessage(message, isError = false) {
+            const msgEl = document.getElementById('status-message');
+            // Clear any existing timeout to allow the new message to display fully
+            clearTimeout(msgEl.dataset.timeout); 
+
+            msgEl.textContent = message;
+            
+            // Apply error styling if needed
+            msgEl.classList.remove('bg-green-100', 'border-green-400', 'text-green-700', 'bg-red-100', 'border-red-400', 'text-red-700');
+            if (isError) {
+                msgEl.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+            } else {
+                msgEl.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
+            }
+
+            // Show message
+            msgEl.classList.remove('hidden', 'translate-x-full');
+            msgEl.classList.add('translate-x-0');
+
+            // Set timeout to hide
+            const timeoutId = setTimeout(() => {
+                msgEl.classList.remove('translate-x-0');
+                msgEl.classList.add('translate-x-full');
+                // Use a short delay before adding 'hidden' back
+                setTimeout(() => {
+                    msgEl.classList.add('hidden');
+                }, 300);
+            }, 3000);
+            
+            msgEl.dataset.timeout = timeoutId;
+        }
+
+        // --- SECTION NAVIGATION ---
+        function switchSection(sectionId) {
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            const target = document.getElementById(sectionId + '-section');
+            if(target) target.classList.add('active');
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            if(sectionId === 'planning') {
+                setTimeout(initChart, 100);
+            }
+            // Update step 3 display when moving to guide
+            if(sectionId === 'guide') {
+                document.getElementById('step3-coffee-name-display').innerText = state.pricing.coffeeName;
+            }
+        }
+
+        // --- READINESS CHECKLIST ---
+        function updateReadiness() {
+            // Updated IDs for the checklist items
+            state.checklist.shopify = document.getElementById('check-shopify').checked;
+            state.checklist.wholesale = document.getElementById('check-wholesale').checked; 
+            
+            const btn = document.getElementById('btn-start-planning');
+            const msg = document.getElementById('readiness-msg');
+            
+            if (state.checklist.shopify && state.checklist.wholesale) {
+                btn.disabled = false;
+                btn.classList.remove('bg-[#E7E5E4]', 'text-gray-400', 'cursor-not-allowed');
+                btn.classList.add('bg-[#78350F]', 'text-white', 'hover:bg-[#92400E]');
+                msg.textContent = "Great! You're ready to proceed.";
+                msg.classList.remove('text-gray-400');
+                msg.classList.add('text-green-600');
+            } else {
+                btn.disabled = true;
+                btn.classList.add('bg-[#E7E5E4]', 'text-gray-400', 'cursor-not-allowed');
+                btn.classList.remove('bg-[#78350F]', 'text-white', 'hover:bg-[#92400E]');
+                msg.textContent = "Please confirm all items to continue.";
+                msg.classList.remove('text-green-600');
+                msg.classList.add('text-gray-400');
+            }
+        }
+
+        // --- CHART & CALCULATOR ---
+        function initChart() {
+            if(pricingChart) {
+                // If chart exists, just ensure it updates with current data
+                updateChartData(false);
+                pricingChart.resize();
+                return; 
+            }
+
+            const ctx = document.getElementById('pricingChart').getContext('2d');
+            pricingChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Suggested Retail Price (MSRP) Breakdown'],
+                    datasets: [
+                        {
+                            label: "Unblended's Net Margin (Our Profit)",
+                            data: [0],
+                            backgroundColor: '#D97706', // Amber/Gold - Unblended's Net Profit
+                            borderWidth: 0,
+                            borderRadius: 2
+                        },
+                        {
+                            label: 'Producer Fee (8% of Wholesale - Paid by Unblended)',
+                            data: [0],
+                            backgroundColor: '#78350F', // Dark Coffee - Producer Fee
+                            borderWidth: 0,
+                            borderRadius: 2
+                        },
+                        {
+                            label: 'Roaster\'s Gross Profit (Your Margin)',
+                            data: [0],
+                            backgroundColor: '#10B981', // Green - Roaster's Profit
+                            borderWidth: 0,
+                            borderRadius: 2
+                        },
+                        {
+                            label: "Roaster's Cost (COGS)",
+                            data: [0],
+                            backgroundColor: '#44403C', // Stone/Gray - Roaster's Cost
+                            borderWidth: 0,
+                            borderRadius: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, 
+                    scales: {
+                        x: { 
+                            stacked: true,
+                            grid: { display: false }
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) { return '$' + value.toFixed(2); }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            updateChartData(false);
+        }
+
+        function updateChartData(shouldSave = true) {
+            // Capture new partner details from Intro section
+            const roasterName = document.getElementById('roaster-name').value;
+            const roasterEmail = document.getElementById('roaster-email').value;
+
+            // Capture pricing data from Planning section
+            const coffeeName = document.getElementById('coffee-name').value;
+            let cogsInput = parseFloat(document.getElementById('price-cogs').value) || 0;
+            let retailInput = parseFloat(document.getElementById('price-retail').value) || 0;
+            let wholesaleInput = parseFloat(document.getElementById('price-wholesale').value) || 0;
+
+            // Basic validation
+            if (cogsInput < 0) cogsInput = 0;
+            // Wholesale must cover COGS
+            if (wholesaleInput < cogsInput) wholesaleInput = cogsInput; 
+            // Retail must cover wholesale
+            if (retailInput < wholesaleInput) retailInput = wholesaleInput; 
+
+            // Update state fields (details)
+            state.partnerDetails.roasterName = roasterName;
+            state.partnerDetails.roasterEmail = roasterEmail;
+
+            // Update state fields (pricing)
+            state.pricing.coffeeName = coffeeName;
+            state.pricing.cogs = cogsInput;
+            state.pricing.retail = retailInput;
+            state.pricing.wholesale = wholesaleInput;
+            
+            // --- REVISED FINANCIAL CALCULATIONS ---
+            const totalRetail = retailInput;
+            const totalWholesale = wholesaleInput; 
+
+            // 1. Roaster's Gross Profit (Their Margin)
+            const roasterGrossProfit = totalWholesale - cogsInput; 
+
+            // 2. Unblended's Gross Markup
+            const unblendedGrossMarkup = totalRetail - totalWholesale;
+
+            // 3. Producer Fee (Paid by Unblended out of its Markup)
+            // It is 8% of the Wholesale Price
+            const producerFee = totalWholesale * PRODUCER_PROFIT_PERCENT; 
+
+            // 4. Unblended's Net Margin (Our actual profit)
+            const unblendedNetMargin = unblendedGrossMarkup - producerFee;
+            
+            // --- Update DOM Text ---
+            document.getElementById('disp-retail').innerText = '$' + totalRetail.toFixed(2);
+            document.getElementById('disp-roaster-margin').innerText = '$' + roasterGrossProfit.toFixed(2); 
+            document.getElementById('disp-unblended-margin').innerText = '$' + unblendedNetMargin.toFixed(2);
+            document.getElementById('step4-price-display').innerText = '$' + totalWholesale.toFixed(2); 
+            
+            // --- Update Chart ---
+            if (pricingChart) {
+                // Stack Order: 
+                // [Unblended Net Margin, Producer Fee, Roaster Gross Profit, Roaster COGS]
+                
+                // Note: The order in the array below maps to the datasets array defined in initChart.
+                // Dataset 0: Unblended's Net Margin
+                pricingChart.data.datasets[0].data = [unblendedNetMargin]; 
+                // Dataset 1: Producer Fee
+                pricingChart.data.datasets[1].data = [producerFee]; 
+                // Dataset 2: Roaster's Gross Profit
+                pricingChart.data.datasets[2].data = [roasterGrossProfit]; 
+                // Dataset 3: COGS (Bottom)
+                pricingChart.data.datasets[3].data = [cogsInput]; 
+                
+                pricingChart.update();
+            }
+            
+            // Persist Data
+            if (shouldSave) {
+                savePartnerData();
+            }
+        }
+
+        // --- STEPPER NAVIGATION ---
+        function renderStepperIndicators() {
+            const container = document.getElementById('stepper-indicators');
+            container.innerHTML = '';
+            
+            for(let i = 1; i <= state.totalSteps; i++) {
+                const dot = document.createElement('div');
+                
+                // Determine styling based on progress
+                let classes = "w-8 h-8 rounded-full flex items-center justify-center border-2 text-sm font-bold z-10 transition-colors duration-200 cursor-pointer";
+                if (i <= state.currentStep) {
+                    classes += " bg-[#78350F] border-[#78350F] text-white";
+                } else {
+                    classes += " bg-white border-gray-300 text-gray-400";
+                }
+                
+                dot.className = classes;
+                dot.innerText = i;
+                dot.setAttribute('data-step-index', i);
+                dot.onclick = () => changeStepTo(i); // Add direct navigation
+                container.appendChild(dot);
+            }
+        }
+        
+        function changeStepTo(newStep) {
+            if(newStep < 1 || newStep > state.totalSteps) return;
+            state.currentStep = newStep;
+            updateStepUI();
+        }
+
+        function changeStep(direction) {
+            const newStep = state.currentStep + direction;
+            changeStepTo(newStep);
+        }
+        
+        function updateStepUI() {
+            const newStep = state.currentStep;
+            
+            // Hide all steps
+            document.querySelectorAll('.step-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.step-content').forEach(el => el.classList.remove('block'));
+            
+            // Show new step
+            const currentEl = document.querySelector(`.step-content[data-step="${newStep}"]`);
+            currentEl.classList.remove('hidden');
+            currentEl.classList.add('block');
+            currentEl.style.animation = 'fadeIn 0.3s ease-in-out';
+            
+            // Update buttons
+            document.getElementById('prev-step-btn').disabled = (newStep === 1);
+            const nextBtn = document.getElementById('next-step-btn');
+            if (newStep === state.totalSteps) {
+                nextBtn.innerText = "Finish";
+                nextBtn.classList.remove('bg-[#78350F]');
+                nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                nextBtn.onclick = () => showStatusMessage("Partner setup completed!");
+            } else {
+                nextBtn.innerText = "Next Step";
+                nextBtn.classList.add('bg-[#78350F]');
+                nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                nextBtn.onclick = () => changeStep(1);
+            }
+            
+            // Update the strategy name display in step 3
+            document.getElementById('step3-coffee-name-display').innerText = state.pricing.coffeeName;
+
+            renderStepperIndicators();
+        }
+
+        // --- APPLICATION INITIALIZATION ---
+        window.onAppReady = function() {
+            const userIdDisplay = document.getElementById('user-id-display');
+            userIdDisplay.textContent = `User ID: ${window.userId}`;
+            userIdDisplay.classList.remove('hidden');
+
+            loadPartnerData();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderStepperIndicators();
+            updateStepUI(); // Initial state UI setup
+        });
+
+    </script>
+</body>
+</html>
